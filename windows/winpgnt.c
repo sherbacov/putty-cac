@@ -34,6 +34,10 @@
 
 #ifndef NO_SECURITY
 #include <aclapi.h>
+#ifdef DEBUG_IPC
+#define _WIN32_WINNT 0x0500            /* for ConvertSidToStringSid */
+#include <sddl.h>
+#endif
 #endif
 
 #define IDI_MAINICON 200
@@ -128,10 +132,10 @@ static tree234 *rsakeys, *ssh2keys, *capikeys;
 
 static int has_security;
 #ifndef NO_SECURITY
-typedef DWORD(WINAPI * gsi_fn_t)
- (HANDLE, SE_OBJECT_TYPE, SECURITY_INFORMATION,
-  PSID *, PSID *, PACL *, PACL *, PSECURITY_DESCRIPTOR *);
-static gsi_fn_t getsecurityinfo;
+DECL_WINDOWS_FUNCTION(extern, DWORD, GetSecurityInfo,
+		      (HANDLE, SE_OBJECT_TYPE, SECURITY_INFORMATION,
+		       PSID *, PSID *, PACL *, PACL *,
+		       PSECURITY_DESCRIPTOR *));
 #endif
 
 /*
@@ -414,7 +418,7 @@ static void keylist_update(void)
 /* PuTTY CAPI start */
 	struct CAPI_userkey *ckey;
 /* PuTTY CAPI end */
-
+	
     if (keylist) {
 	SendDlgItemMessage(keylist, 100, LB_RESETCONTENT, 0, 0);
 	for (i = 0; NULL != (rkey = index234(rsakeys, i)); i++) {
@@ -459,7 +463,7 @@ static void keylist_update(void)
 	    SendDlgItemMessage(keylist, 100, LB_ADDSTRING, 0,
 			       (LPARAM) listentry);
 	}
-/* PuTTY CAPI start */
+	/* PuTTY CAPI start */
 	for (i = 0; NULL != (ckey = index234(capikeys, i)); i++) {
 	    char listentry[512];
 	    memset(listentry, 0, sizeof(listentry));
@@ -616,7 +620,8 @@ static void add_keyfile(Filename filename)
     struct PassphraseProcStruct pps;
     int type;
     int original_pass;
-/* PuTTY CAPI start */
+	
+	/* PuTTY CAPI start */
 	BOOL CAPI_KEY = FALSE;
 	struct CAPI_userkey *ckey = NULL;
 
@@ -643,7 +648,7 @@ static void add_keyfile(Filename filename)
 	sfree(msg);
 	return;
     }
-/* PuTTY CAPI start */
+	/* PuTTY CAPI start */
 	}
 /* PuTTY CAPI end */
 
@@ -667,7 +672,7 @@ static void add_keyfile(Filename filename)
 	    keylist = get_keylist1(&keylistlen);
 	} else {
 	    unsigned char *blob2;
-/* PuTTY CAPI start */
+		/* PuTTY CAPI start */
 		if (CAPI_KEY) {
 			bloblen = ckey->bloblen;
 		}
@@ -688,7 +693,7 @@ static void add_keyfile(Filename filename)
 	    /* For our purposes we want the blob prefixed with its length */
 	    blob2 = snewn(bloblen+4, unsigned char);
 	    PUT_32BIT(blob2, bloblen);
-/* PuTTY CAPI start */
+		/* PuTTY CAPI start */
 		if (CAPI_KEY) {
 		    memcpy(blob2 + 4, ckey->blob, ckey->bloblen);
 		}
@@ -696,7 +701,7 @@ static void add_keyfile(Filename filename)
 /* PuTTY CAPI end */
 	    memcpy(blob2 + 4, blob, bloblen);
 	    sfree(blob);
-/* PuTTY CAPI start */
+		/* PuTTY CAPI start */
 		}
 /* PuTTY CAPI end */
 	    blob = blob2;
@@ -771,7 +776,7 @@ static void add_keyfile(Filename filename)
 	sfree(blob);
     }
 
-/* PuTTY CAPI start */
+	/* PuTTY CAPI start */
 	// if we've reached this far, the key is not already loaded....
 	if (CAPI_KEY) {
 		if (already_running) {
@@ -816,7 +821,7 @@ static void add_keyfile(Filename filename)
 		return;
 	}
 /* PuTTY CAPI end */
-
+	
     error = NULL;
     if (type == SSH_KEYTYPE_SSH1)
 	needs_pass = rsakey_encrypted(&filename, &comment);
@@ -1057,8 +1062,8 @@ static void *make_keylist2(int *length)
 	sfree(blob);
 	len += 4 + strlen(key->comment);
     }
-
-/* PuTTY CAPI start */
+	
+	/* PuTTY CAPI start */
 	for (i = 0; NULL != (ckey = index234(capikeys, i)); i++) {
 		nkeys++;
 		len += 4;	       /* length field */
@@ -1088,7 +1093,8 @@ static void *make_keylist2(int *length)
 	memcpy(p + 4, key->comment, strlen(key->comment));
 	p += 4 + strlen(key->comment);
     }
-/* PuTTY CAPI start */
+	
+	/* PuTTY CAPI start */
 	for (i = 0; NULL != (ckey = index234(capikeys, i)); i++) {
 		PUT_32BIT(p, ckey->bloblen);
 		p += 4;
@@ -1309,7 +1315,7 @@ static void answer_msg(void *msg)
 	 * or not.
 	 */
 	{
-/* PuTTY CAPI start */
+	/* PuTTY CAPI start */
 		struct CAPI_userkey *ckey;
 /* PuTTY CAPI end */
 	    struct ssh2_userkey *key;
@@ -1332,7 +1338,7 @@ static void answer_msg(void *msg)
 	    if (msgend < p+datalen)
 		goto failure;
 	    data = p;
-/* PuTTY CAPI start */
+		/* PuTTY CAPI start */
 		ckey = find234(capikeys, &b, cmpkeys_capi_blob);
 		if (ckey) {
 			if ((signature = capi_sig_certID(ckey->certID, data, datalen, &siglen)) == NULL)
@@ -1343,7 +1349,7 @@ static void answer_msg(void *msg)
 	    key = find234(ssh2keys, &b, cmpkeys_ssh2_asymm);
 	    if (!key)
 		goto failure;
-	    /* PuTTY SC start */
+		/* PuTTY SC start */
 	    if((sclib != NULL) && (strcmp(key->comment, pkcs11_cert_label) == 0)) {
 	      char passphrase[PASSPHRASE_MAXLEN];
 	      struct PassphraseProcStruct pps1;
@@ -1367,7 +1373,7 @@ static void answer_msg(void *msg)
 	    else
 	    /* PuTTY SC end */
 	    signature = key->alg->sign(key->data, data, datalen, &siglen);
-/* PuTTY CAPI start */
+		/* PuTTY CAPI start */
 		}
 /* PuTTY CAPI end */
 	    len = 5 + 4 + siglen;
@@ -1481,8 +1487,7 @@ static void answer_msg(void *msg)
 		goto failure;
 	    alg = p;
 	    p += alglen;
-
-/* PuTTY CAPI start */
+		/* PuTTY CAPI start */
 	    if (alglen == 4 && memcmp(alg, "CAPI", 4) == 0) {
 			struct CAPI_userkey *ckey;
 			char *certID;
@@ -1508,6 +1513,7 @@ static void answer_msg(void *msg)
 	    	break;
 	    }
 /* PuTTY CAPI end */
+
 	    key = snew(struct ssh2_userkey);
 	    /* Add further algorithm names here. */
 	    if (alglen == 7 && !memcmp(alg, "ssh-rsa", 7))
@@ -1847,7 +1853,7 @@ static int CALLBACK KeyListProc(HWND hwnd, UINT msg,
 {
     struct RSAKey *rkey;
     struct ssh2_userkey *skey;
-/* PuTTY CAPI start */
+	/* PuTTY CAPI start */
     struct CAPI_userkey *ckey;
 /* PuTTY CAPI end */
 
@@ -1933,7 +1939,8 @@ static int CALLBACK KeyListProc(HWND hwnd, UINT msg,
 		itemNum = numSelected - 1;
 		rCount = count234(rsakeys);
 		sCount = count234(ssh2keys);
-/* PuTTY CAPI start */
+		
+		/* PuTTY CAPI start */
 		cCount = count234(capikeys);
 /* PuTTY CAPI end */
 		
@@ -1942,7 +1949,7 @@ static int CALLBACK KeyListProc(HWND hwnd, UINT msg,
 		 * we go *backwards*, to avoid complications from deleting
 		 * things hence altering the offset of subsequent items
 		 */
-/* PuTTY CAPI start */
+		 /* PuTTY CAPI start */
 	    for (i = cCount - 1; (itemNum >= 0) && (i >= 0); i--) {
 			ckey = index234(capikeys, i);
 			
@@ -1986,7 +1993,7 @@ static int CALLBACK KeyListProc(HWND hwnd, UINT msg,
 		launch_help(hwnd, WINHELP_CTX_pageant_general);
             }
 	    return 0;
-/* PuTTY CAPI start */
+		/* PuTTY CAPI start */
 		case 100: { // listbox
 			if (HIWORD(wParam) == LBN_DBLCLK) {
 				int i, rCount, sCount, cCount;
@@ -2027,6 +2034,7 @@ static int CALLBACK KeyListProc(HWND hwnd, UINT msg,
 		}
 /* PuTTY CAPI end */
 	}
+	return 0;
       case WM_HELP:
         {
             int id = ((LPHELPINFO)lParam)->iCtrlId;
@@ -2069,7 +2077,7 @@ static BOOL AddTrayIcon(HWND hwnd)
     tnid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     tnid.uCallbackMessage = WM_SYSTRAY;
     tnid.hIcon = hicon = LoadIcon(hinst, MAKEINTRESOURCE(201));
-    strcpy(tnid.szTip, "Pageant (PuTTY SC authentication agent)");
+    strcpy(tnid.szTip, "Pageant (PuTTY authentication agent)");
 
     res = Shell_NotifyIcon(NIM_ADD, &tnid);
 
@@ -2130,6 +2138,53 @@ static void update_sessions(void)
 	InsertMenuItem(session_menu, index_menu, TRUE, &mii);
     }
 }
+
+#ifndef NO_SECURITY
+/*
+ * Versions of Pageant prior to 0.61 expected this SID on incoming
+ * communications. For backwards compatibility, and more particularly
+ * for compatibility with derived works of PuTTY still using the old
+ * Pageant client code, we accept it as an alternative to the one
+ * returned from get_user_sid() in winpgntc.c.
+ */
+PSID get_default_sid(void)
+{
+    HANDLE proc = NULL;
+    DWORD sidlen;
+    PSECURITY_DESCRIPTOR psd = NULL;
+    PSID sid = NULL, copy = NULL, ret = NULL;
+
+    if ((proc = OpenProcess(MAXIMUM_ALLOWED, FALSE,
+                            GetCurrentProcessId())) == NULL)
+        goto cleanup;
+
+    if (p_GetSecurityInfo(proc, SE_KERNEL_OBJECT, OWNER_SECURITY_INFORMATION,
+                          &sid, NULL, NULL, NULL, &psd) != ERROR_SUCCESS)
+        goto cleanup;
+
+    sidlen = GetLengthSid(sid);
+
+    copy = (PSID)smalloc(sidlen);
+
+    if (!CopySid(sidlen, copy, sid))
+        goto cleanup;
+
+    /* Success. Move sid into the return value slot, and null it out
+     * to stop the cleanup code freeing it. */
+    ret = copy;
+    copy = NULL;
+
+  cleanup:
+    if (proc != NULL)
+        CloseHandle(proc);
+    if (psd != NULL)
+        LocalFree(psd);
+    if (copy != NULL)
+        sfree(copy);
+
+    return ret;
+}
+#endif
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 				WPARAM wParam, LPARAM lParam)
@@ -2268,10 +2323,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 	    void *p;
 	    HANDLE filemap;
 #ifndef NO_SECURITY
-	    HANDLE proc;
-	    PSID mapowner, procowner;
-	    PSECURITY_DESCRIPTOR psd1 = NULL, psd2 = NULL;
+	    PSID mapowner, ourself, ourself2;
 #endif
+            PSECURITY_DESCRIPTOR psd = NULL;
 	    int ret = 0;
 
 	    cds = (COPYDATASTRUCT *) lParam;
@@ -2291,46 +2345,54 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 #ifndef NO_SECURITY
 		int rc;
 		if (has_security) {
-		    if ((proc = OpenProcess(MAXIMUM_ALLOWED, FALSE,
-					    GetCurrentProcessId())) ==
-			NULL) {
+                    if ((ourself = get_user_sid()) == NULL) {
 #ifdef DEBUG_IPC
-			debug(("couldn't get handle for process\n"));
+			debug(("couldn't get user SID\n"));
 #endif
 			return 0;
-		    }
-		    if (getsecurityinfo(proc, SE_KERNEL_OBJECT,
-					OWNER_SECURITY_INFORMATION,
-					&procowner, NULL, NULL, NULL,
-					&psd2) != ERROR_SUCCESS) {
+                    }
+
+                    if ((ourself2 = get_default_sid()) == NULL) {
 #ifdef DEBUG_IPC
-			debug(("couldn't get owner info for process\n"));
+			debug(("couldn't get default SID\n"));
 #endif
-			CloseHandle(proc);
-			return 0;      /* unable to get security info */
-		    }
-		    CloseHandle(proc);
-		    if ((rc = getsecurityinfo(filemap, SE_KERNEL_OBJECT,
-					      OWNER_SECURITY_INFORMATION,
-					      &mapowner, NULL, NULL, NULL,
-					      &psd1) != ERROR_SUCCESS)) {
+			return 0;
+                    }
+
+		    if ((rc = p_GetSecurityInfo(filemap, SE_KERNEL_OBJECT,
+						OWNER_SECURITY_INFORMATION,
+						&mapowner, NULL, NULL, NULL,
+						&psd) != ERROR_SUCCESS)) {
 #ifdef DEBUG_IPC
-			debug(
-			      ("couldn't get owner info for filemap: %d\n",
-			       rc));
+			debug(("couldn't get owner info for filemap: %d\n",
+                               rc));
 #endif
 			return 0;
 		    }
 #ifdef DEBUG_IPC
-		    debug(("got security stuff\n"));
+                    {
+                        LPTSTR ours, ours2, theirs;
+                        ConvertSidToStringSid(mapowner, &theirs);
+                        ConvertSidToStringSid(ourself, &ours);
+                        ConvertSidToStringSid(ourself2, &ours2);
+                        debug(("got sids:\n  oursnew=%s\n  oursold=%s\n"
+                               "  theirs=%s\n", ours, ours2, theirs));
+                        LocalFree(ours);
+                        LocalFree(ours2);
+                        LocalFree(theirs);
+                    }
 #endif
-		    if (!EqualSid(mapowner, procowner))
+		    if (!EqualSid(mapowner, ourself) &&
+                        !EqualSid(mapowner, ourself2)) {
+                        CloseHandle(filemap);
 			return 0;      /* security ID mismatch! */
+                    }
 #ifdef DEBUG_IPC
 		    debug(("security stuff matched\n"));
 #endif
-		    LocalFree(psd1);
-		    LocalFree(psd2);
+                    LocalFree(psd);
+                    sfree(ourself);
+                    sfree(ourself2);
 		} else {
 #ifdef DEBUG_IPC
 		    debug(("security APIs not present\n"));
@@ -2343,9 +2405,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 		{
 		    int i;
 		    for (i = 0; i < 5; i++)
-			debug(
-			      ("p[%d]=%02x\n", i,
-			       ((unsigned char *) p)[i]));}
+			debug(("p[%d]=%02x\n", i,
+			       ((unsigned char *) p)[i]));
+                }
 #endif
 		answer_msg(p);
 		ret = 1;
@@ -2401,8 +2463,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     int added_keys = 0;
     int argc, i;
     char **argv, **argstart;
-
-	/* PuTTY SC start */
+	
+		/* PuTTY SC start */
     HKEY hkey;
     /* PuTTY SC end */
 
@@ -2427,10 +2489,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 	/*
 	 * Attempt to get the security API we need.
 	 */
-	advapi = LoadLibrary("ADVAPI32.DLL");
-	getsecurityinfo =
-	    (gsi_fn_t) GetProcAddress(advapi, "GetSecurityInfo");
-	if (!getsecurityinfo) {
+        if (!init_advapi()) {
 	    MessageBox(NULL,
 		       "Unable to access security APIs. Pageant will\n"
 		       "not run, in case it causes a security breach.",
@@ -2459,7 +2518,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     {
         char b[2048], *p, *q, *r;
         FILE *fp;
-        GetModuleFileName(NULL, b, sizeof(b) - 1);
+        GetModuleFileName(NULL, b, sizeof(b) - 16);
         r = b;
         p = strrchr(b, '\\');
         if (p && p >= r) r = p+1;
@@ -2484,7 +2543,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     if (!already_running) {
 	rsakeys = newtree234(cmpkeys_rsa);
 	ssh2keys = newtree234(cmpkeys_ssh2);
-/* PuTTY CAPI start */
+	/* PuTTY CAPI start */
 	capikeys = newtree234(cmpkeys_capi);
 /* PuTTY CAPI end */
     }
@@ -2571,8 +2630,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     }
 
     keylist = NULL;
-
-    /* PuTTY SC start */
+	
+	 /* PuTTY SC start */
     if(ERROR_SUCCESS == RegOpenKey(HKEY_CURRENT_USER, PUTTY_REGKEY, &hkey)) {
       TCHAR buf[MAX_PATH + 1];
       int index_key = 0;
